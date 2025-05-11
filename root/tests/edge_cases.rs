@@ -3,7 +3,7 @@ use root::router::INF;
 mod common;
 
 #[test]
-fn retraction_link_down(){
+fn retraction_link_down() {
     let mut network = common::graphs::vnet_simple_weighted();
     network.tick_n(10); // just make it converge
 
@@ -18,15 +18,14 @@ fn retraction_link_down(){
     assert_eq!(network.get_next_hop("1", "5"), "3");
 }
 
-
 #[test]
-fn link_recovery_inf_sum(){
+fn link_recovery_inf_sum() {
     let mut network = common::graphs::vnet_fragile_network();
     network.tick_n(10); // just make it converge
 
     assert_eq!(network.get_metric_to("3", "5"), 12);
     assert_eq!(network.get_next_hop("3", "5"), "1");
-    
+
     // make link infeasible
     network.update_edge(3, 11);
     network.tick_n(2);
@@ -37,7 +36,7 @@ fn link_recovery_inf_sum(){
     assert_eq!(network.get_metric_to("3", "5"), 13);
     assert_eq!(network.get_next_hop("3", "5"), "1");
 
-    network.update_edge(3, INF-1);
+    network.update_edge(3, INF - 1);
     network.tick_n(6);
-    assert_eq!(network.get_metric_to("3", "5"), INF-1); // should never be INF, since that is retracted
+    assert_eq!(network.get_metric_to("3", "5"), INF - 1); // should never be INF, since that is retracted
 }

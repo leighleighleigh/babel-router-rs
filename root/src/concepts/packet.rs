@@ -1,12 +1,11 @@
-use educe::Educe;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
+extern crate alloc;
 use crate::concepts::route::Source;
-use crate::framework::{MAC, RoutingSystem};
+use crate::framework::{RoutingSystem, MAC};
+use alloc::vec::Vec;
 
-#[derive(Educe)]
-#[educe(Clone(bound()))]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(bound = ""))]
 pub enum Packet<T: RoutingSystem + ?Sized> {
     /// this is a single, unscheduled update that should be sent immediately.
@@ -21,8 +20,7 @@ pub enum Packet<T: RoutingSystem + ?Sized> {
     },
 }
 
-#[derive(Educe)]
-#[educe(Clone(bound()))]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(bound = ""))]
 pub struct RouteUpdate<T: RoutingSystem + ?Sized> {
     /// Secured source information signed by the source (address, seqno)
@@ -30,8 +28,7 @@ pub struct RouteUpdate<T: RoutingSystem + ?Sized> {
     pub metric: u16,
 }
 
-#[derive(Educe)]
-#[educe(Clone(bound()))]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(bound = ""))]
 pub struct OutboundPacket<T: RoutingSystem + ?Sized> {
     /// send via this link

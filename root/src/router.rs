@@ -1,17 +1,19 @@
 use crate::concepts::neighbour::Neighbour;
 use crate::concepts::packet::{OutboundPacket, Packet, RouteUpdate};
 use crate::concepts::route::{ExternalRoute, Route, Source};
-use crate::framework::{MAC, MACSignature, MACSystem, RootData, RoutingSystem};
-use crate::router::UpdateAction::{NoAction, Retraction, SeqnoUpdate};
-use crate::util::{increment, increment_by, seqno_less_than, sum_inf};
-use std::collections::{HashMap, HashSet, VecDeque};
-use cfg_if::cfg_if;
-use educe::Educe;
-use crate::feedback::{RoutingError, RoutingWarning};
 use crate::feedback::RoutingError::MACValidationFail;
 use crate::feedback::RoutingWarning::{DesynchronizedSeqno, MetricIsZero};
+use crate::feedback::{RoutingError, RoutingWarning};
+use crate::framework::{MACSignature, MACSystem, RootData, RoutingSystem, MAC};
+use crate::router::UpdateAction::{NoAction, Retraction, SeqnoUpdate};
+use crate::util::{increment, increment_by, seqno_less_than, sum_inf};
+use cfg_if::cfg_if;
+extern crate alloc;
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
+use hashbrown::{HashMap, HashSet};
 
-cfg_if!{
+cfg_if! {
     if #[cfg(feature = "serde")] {
         use serde::{Deserialize, Serialize};
         use serde_with::serde_as;
@@ -20,7 +22,13 @@ cfg_if!{
 
 pub const INF: u16 = 0xFFFF;
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(bound = ""), serde_as)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(bound = ""),
+    serde_as
+)]
+#[derive(Debug, Clone)]
 pub struct Router<T: RoutingSystem + ?Sized> {
     #[cfg_attr(feature = "serde", serde(skip_serializing, skip_deserializing))]
     pub links: HashMap<T::Link, Neighbour<T>>,
@@ -37,7 +45,7 @@ pub struct Router<T: RoutingSystem + ?Sized> {
     pub mac_sys: T::MACSystem,
     /// drain this regularly for warnings
     #[cfg_attr(feature = "serde", serde(skip_serializing, skip_deserializing))]
-    pub warnings: VecDeque<RoutingWarning<T>>
+    pub warnings: VecDeque<RoutingWarning<T>>,
 }
 
 #[derive(Eq, PartialEq)]
@@ -48,14 +56,14 @@ enum UpdateAction {
 }
 
 impl<T: RoutingSystem> Router<T> {
-    fn warn(&mut self, warning: RoutingWarning<T>){
-        if self.warnings.len() > T::MAX_WARN_LENGTH{
+    fn warn(&mut self, warning: RoutingWarning<T>) {
+        if self.warnings.len() > T::MAX_WARN_LENGTH {
             self.warnings.pop_front();
         }
         self.warnings.push_back(warning);
     }
     pub fn new(address: T::NodeAddress) -> Self {
-        Self{
+        Self {
             links: HashMap::new(),
             routes: HashMap::new(),
             address,
@@ -64,23 +72,23 @@ impl<T: RoutingSystem> Router<T> {
             outbound_packets: Vec::new(),
             seqno: 0,
             mac_sys: Default::default(),
-            warnings: Default::default()
+            warnings: Default::default(),
         }
     }
 
-    pub fn set_link_metric(&mut self, link: &T::Link, new_metric: u16){
-        if let Some(neigh) = self.links.get_mut(link){
+    pub fn set_link_metric(&mut self, link: &T::Link, new_metric: u16) {
+        if let Some(neigh) = self.links.get_mut(link) {
             neigh.metric = new_metric;
         }
     }
-    
+
     /// updates the state of the router, does not broadcast routes
-    pub fn update(&mut self){
+    pub fn update(&mut self) {
         self.update_routes();
         self.broadcast_seqno_updates();
     }
     /// performs a full update on the state of the router, will broadcast routes to neighbours
-    pub fn full_update(&mut self){
+    pub fn full_update(&mut self) {
         self.update_routes();
 
         self.solve_starvation();
@@ -101,7 +109,7 @@ impl<T: RoutingSystem> Router<T> {
             });
         }
     }
-    
+
     // endregion
 
     // region Route Selection
@@ -130,15 +138,19 @@ impl<T: RoutingSystem> Router<T> {
         }
     }
 
-    fn is_feasible(selected_route: &Route<T>, new_route: &ExternalRoute<T>, metric: u16) -> Option<u16> {
+    fn is_feasible(
+        selected_route: &Route<T>,
+        new_route: &ExternalRoute<T>,
+        metric: u16,
+    ) -> Option<u16> {
         let fd = selected_route.fd;
         let s = selected_route.source.data().seqno;
         let n = new_route.source.data().seqno;
         if seqno_less_than(n, s) {
             return None;
         }
-        if metric < fd || seqno_less_than(s, n)
-            || (metric == fd && selected_route.metric == INF) // TODO: Prove why this is valid, and doesnt cause issues...
+        if metric < fd || seqno_less_than(s, n) || (metric == fd && selected_route.metric == INF)
+        // TODO: Prove why this is valid, and doesnt cause issues...
         {
             return Some(metric);
         }
@@ -152,9 +164,9 @@ impl<T: RoutingSystem> Router<T> {
         for (_addr, route) in &mut self.routes {
             let link = &route.link;
             // check if link still exists
-            if !self.links.contains_key(link) || self.links.get(link).unwrap().metric == INF{
+            if !self.links.contains_key(link) || self.links.get(link).unwrap().metric == INF {
                 route.metric = INF;
-                if !route.retracted{
+                if !route.retracted {
                     retractions.push(route.source.clone());
                 }
                 route.retracted = true;
@@ -162,11 +174,11 @@ impl<T: RoutingSystem> Router<T> {
         }
         for (link, neigh) in &mut self.links {
             if neigh.metric == 0 {
-                self.warnings.push_back(MetricIsZero {link: link.clone()});
+                self.warnings.push_back(MetricIsZero { link: link.clone() });
                 neigh.metric = 1;
             }
             for (src, neigh_route) in &neigh.routes {
-                if *src == self.address{
+                if *src == self.address {
                     continue; // we can safely ignore a route to ourself
                 }
 
@@ -192,7 +204,7 @@ impl<T: RoutingSystem> Router<T> {
                             if metric > fd {
                                 // infeasible route, we should retract this
                                 table_route.metric = INF;
-                                if !table_route.retracted{
+                                if !table_route.retracted {
                                     retractions.push(table_route.source.clone());
                                 }
                                 table_route.retracted = true;
@@ -206,7 +218,7 @@ impl<T: RoutingSystem> Router<T> {
                     }
                 } else if metric != INF {
                     // create the new route, if it is valid
-                    let n_route = Route{
+                    let n_route = Route {
                         source: neigh_route.source.clone(),
                         metric,
                         fd: metric,
@@ -234,7 +246,7 @@ impl<T: RoutingSystem> Router<T> {
                 metric: route.metric,
             })
         }
-        vec.push(RouteUpdate{
+        vec.push(RouteUpdate {
             source: self.mac_sys.sign(
                 Source {
                     addr: self.address.clone(),
@@ -242,16 +254,20 @@ impl<T: RoutingSystem> Router<T> {
                 },
                 self,
             ),
-            metric: 0
+            metric: 0,
         });
-        self.write_broadcast_packet(&self.mac_sys.sign(
-            Packet::BatchRouteUpdate { routes: vec },
-            self,
-        ))
+        self.write_broadcast_packet(
+            &self
+                .mac_sys
+                .sign(Packet::BatchRouteUpdate { routes: vec }, self),
+        )
     }
     /// you should call this after calling update routes, otherwise the seqno metrics published is not the best...
     pub fn broadcast_seqno_updates(&mut self) {
-        let tmp_seqno = self.broadcast_route_for.drain().collect::<Vec<T::NodeAddress>>();
+        let tmp_seqno = self
+            .broadcast_route_for
+            .drain()
+            .collect::<Vec<T::NodeAddress>>();
         for source in tmp_seqno {
             if let Some(pkt) = self.create_seqno_packet(&source) {
                 self.write_broadcast_packet(&pkt);
@@ -261,9 +277,9 @@ impl<T: RoutingSystem> Router<T> {
 
     /// Creates a seqno packet using the data we already have
     fn create_seqno_packet(&self, addr: &T::NodeAddress) -> Option<MAC<Packet<T>, T>> {
-        if *addr == self.address{
+        if *addr == self.address {
             return Some(self.mac_sys.sign(
-                Packet::UrgentRouteUpdate(RouteUpdate{
+                Packet::UrgentRouteUpdate(RouteUpdate {
                     source: self.mac_sys.sign(
                         Source {
                             addr: self.address.clone(),
@@ -271,7 +287,7 @@ impl<T: RoutingSystem> Router<T> {
                         },
                         self,
                     ),
-                    metric: 0
+                    metric: 0,
                 }),
                 self,
             ));
@@ -304,12 +320,10 @@ impl<T: RoutingSystem> Router<T> {
         &mut self,
         data: &MAC<Packet<T>, T>,
         link: &T::Link,
-        neigh: &T::NodeAddress
+        neigh: &T::NodeAddress,
     ) -> Result<(), RoutingError<T>> {
         if !self.mac_sys.validate(data, neigh) {
-            return Err(MACValidationFail {
-                link: link.clone()
-            });
+            return Err(MACValidationFail { link: link.clone() });
         }
 
         // if exists, contains the address we should broadcast
@@ -352,12 +366,12 @@ impl<T: RoutingSystem> Router<T> {
                         // we are the intended recipient, so we can broadcast this!
                         let original = self.seqno;
                         increment(&mut self.seqno);
-                        if seqno_less_than(self.seqno, *seqno) && T::TRUST_RESYNC_SEQNO{
+                        if seqno_less_than(self.seqno, *seqno) && T::TRUST_RESYNC_SEQNO {
                             self.seqno = *seqno; // did our node go to sleep? we have less seqno than what others are requesting.
-                            // MAKE SURE TO ENABLE MAC IN PROD
+                                                 // MAKE SURE TO ENABLE MAC IN PROD
                             self.warn(DesynchronizedSeqno {
                                 old_seqno: original,
-                                new_seqno: self.seqno
+                                new_seqno: self.seqno,
                             });
                         }
                         self.broadcast_route_for.insert(self.address.clone());
@@ -388,7 +402,7 @@ impl<T: RoutingSystem> Router<T> {
     }
 
     pub fn get_seqno_for(&self, addr: &T::NodeAddress) -> Option<u16> {
-        if *addr == self.address{
+        if *addr == self.address {
             return Some(self.seqno);
         }
         if let Some(x) = self.routes.get(addr) {
@@ -403,20 +417,18 @@ impl<T: RoutingSystem> Router<T> {
         &mut self,
         update: &RouteUpdate<T>,
         link: &T::Link,
-        neigh: &T::NodeAddress
+        neigh: &T::NodeAddress,
     ) -> Result<UpdateAction, RoutingError<T>> {
         let Source { addr: src, seqno } = update.source.data();
 
-        if *src == self.address{
+        if *src == self.address {
             // just ignore this
             return Ok(NoAction);
         }
 
         // validate update
         if !self.mac_sys.validate(&update.source, src) {
-            return Err(MACValidationFail {
-                link: link.clone()
-            });
+            return Err(MACValidationFail { link: link.clone() });
         }
 
         let mut action = NoAction;
@@ -428,40 +440,38 @@ impl<T: RoutingSystem> Router<T> {
                 action = SeqnoUpdate; // our neighbour has a higher seqno than us!
             }
         }
-        
+
         // check if this route is the currently selected route
         let mut selected = false;
-        if let Some(route) = self.routes.get(src){
+        if let Some(route) = self.routes.get(src) {
             selected = route.next_hop == *neigh;
         }
 
         if let Some(neighbour) = self.links.get_mut(link) {
             // update the value
-            if let Some(table_route) = neighbour.routes.get_mut(src){
+            if let Some(table_route) = neighbour.routes.get_mut(src) {
                 table_route.source = update.source.clone();
-                if update.metric == INF{
+                if update.metric == INF {
                     // handle retraction
-                    
+
                     // make sure we don't re-retract an already retracted route
                     if !table_route.retracted {
-                        if action == NoAction && selected{
+                        if action == NoAction && selected {
                             // broadcast this retraction, since we are advertising it
                             action = Retraction;
                         }
                         table_route.metric = INF;
                         table_route.retracted = true
                     }
-                }
-                else{
+                } else {
                     table_route.metric = update.metric;
                 }
-            }
-            else if update.metric != INF || selected {
+            } else if update.metric != INF || selected {
                 // we add the route if it is not INF, or if it is selected
                 let route = ExternalRoute {
-                source: update.source.clone(),
+                    source: update.source.clone(),
                     metric: update.metric,
-                    retracted: update.metric == INF
+                    retracted: update.metric == INF,
                 };
                 neighbour.routes.insert(src.clone(), route);
             }
@@ -470,27 +480,22 @@ impl<T: RoutingSystem> Router<T> {
     }
 }
 
-#[derive(Default)]
-pub struct NoMACSystem {
+#[derive(Default, Debug, Clone)]
+pub struct NoMACSystem {}
 
-}
-
-#[derive(Educe)]
-#[educe(Clone(bound()))]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(bound = ""))]
-pub struct DummyMAC<V: RootData>{
+pub struct DummyMAC<V: RootData> {
     pub data: V,
 }
 
-impl<V: RootData> From<V> for DummyMAC<V>{
+impl<V: RootData> From<V> for DummyMAC<V> {
     fn from(value: V) -> Self {
-        Self{
-            data: value
-        }
+        Self { data: value }
     }
 }
 
-impl<V: RootData, T: RoutingSystem + ?Sized> MACSignature<V, T> for DummyMAC<V>{
+impl<V: RootData, T: RoutingSystem + ?Sized> MACSignature<V, T> for DummyMAC<V> {
     fn data(&self) -> &V {
         &self.data
     }
@@ -502,10 +507,8 @@ impl<V: RootData, T: RoutingSystem + ?Sized> MACSignature<V, T> for DummyMAC<V>{
 
 impl<T: RoutingSystem + ?Sized> MACSystem<T> for NoMACSystem {
     type MACSignatureType<V: RootData> = DummyMAC<V>;
-    fn sign<V: RootData>(&self, data: V, router: &Router<T>) -> DummyMAC<V>{
-        DummyMAC{
-            data
-        }
+    fn sign<V: RootData>(&self, data: V, router: &Router<T>) -> DummyMAC<V> {
+        DummyMAC { data }
     }
 
     fn validate<V: RootData>(&self, sig: &MAC<V, T>, subject: &T::NodeAddress) -> bool {
