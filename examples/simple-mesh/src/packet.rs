@@ -1,45 +1,45 @@
-use serde::{Deserialize, Serialize};
+use crate::routing::IPV4System;
 use root::concepts::packet::Packet;
 use root::framework::RoutingSystem;
-use crate::routing::IPV4System;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
-pub enum NetPacket{
+pub enum NetPacket {
     Ping(<IPV4System as RoutingSystem>::Link),
     Pong(<IPV4System as RoutingSystem>::Link),
     Routing {
         link_id: <IPV4System as RoutingSystem>::Link,
-        data: Packet<IPV4System>
+        data: Packet<IPV4System>,
     },
-    LinkRequest{
+    LinkRequest {
         link_id: <IPV4System as RoutingSystem>::Link,
-        from: <IPV4System as RoutingSystem>::NodeAddress
+        from: <IPV4System as RoutingSystem>::NodeAddress,
     },
-    LinkResponse{
+    LinkResponse {
         link_id: <IPV4System as RoutingSystem>::Link,
-        node_id: <IPV4System as RoutingSystem>::NodeAddress
+        node_id: <IPV4System as RoutingSystem>::NodeAddress,
     },
-    Deliver{
+    Deliver {
         dst_id: <IPV4System as RoutingSystem>::NodeAddress,
         sender_id: <IPV4System as RoutingSystem>::NodeAddress,
-        data: RoutedPacket
+        data: RoutedPacket,
     },
-    TraceRoute{
+    TraceRoute {
         dst_id: <IPV4System as RoutingSystem>::NodeAddress,
         sender_id: <IPV4System as RoutingSystem>::NodeAddress,
-        path: Vec<<IPV4System as RoutingSystem>::NodeAddress>
-    }
+        path: Vec<<IPV4System as RoutingSystem>::NodeAddress>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
-pub enum RoutedPacket{
+pub enum RoutedPacket {
     Ping,
     Pong,
-    TracedRoute{
-        path: Vec<<IPV4System as RoutingSystem>::NodeAddress>
+    TracedRoute {
+        path: Vec<<IPV4System as RoutingSystem>::NodeAddress>,
     },
     Message(String),
-    Undeliverable{
-        to: <IPV4System as RoutingSystem>::NodeAddress
-    }
+    Undeliverable {
+        to: <IPV4System as RoutingSystem>::NodeAddress,
+    },
 }

@@ -1,0 +1,38 @@
+default:
+    just -l
+
+bin := justfile_directory() / "../../target/debug/simple-mesh"
+
+setup:
+    #!/usr/bin/env bash
+    set -x
+    sudo ip link delete vmesh0 >/dev/null 2>&1
+    sudo ip netns delete meshns0
+    sudo ip netns delete meshns1
+    sleep 1
+    sudo ip link add vmesh0 type veth peer name vmesh1
+    sudo ip netns add meshns0
+    sudo ip netns add meshns1
+    sleep 1
+    sudo ip link set vmesh0 netns meshns0
+    sudo ip link set vmesh1 netns meshns1
+    sleep 1
+    sudo ip -n meshns0 addr add 10.0.0.1/24 dev vmesh0
+    sudo ip -n meshns1 addr add 10.0.0.2/24 dev vmesh1
+    sleep 1
+    sudo ip -n meshns0 link set vmesh0 up
+    sudo ip -n meshns1 link set vmesh1 up
+    sudo ip -n meshns0 link set lo up
+    sudo ip -n meshns1 link set lo up
+
+bob:
+    #!/usr/bin/env bash
+    mkdir -p /tmp/simple-mesh/bob/
+    cd /tmp/simple-mesh/bob/
+    sudo ip netns exec meshns0 {{bin}}
+
+alice:
+    #!/usr/bin/env bash
+    mkdir -p /tmp/simple-mesh/alice/
+    cd /tmp/simple-mesh/alice/
+    sudo ip netns exec meshns1 {{bin}}

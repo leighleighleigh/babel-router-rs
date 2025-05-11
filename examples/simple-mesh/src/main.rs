@@ -1,31 +1,34 @@
 mod link;
+mod mesh_router;
+mod packet;
 mod routing;
 mod state;
-mod packet;
-mod mesh_router;
 
-use std::collections::{HashMap};
-use std::{env, fs};
-use std::io::{stdin};
-use std::time::{Duration};
-use inquire::{prompt_text};
+use crate::mesh_router::start_router;
+use crate::state::MainLoopEvent::DispatchCommand;
+use crate::state::OperatingState;
+use crate::state::PersistentState;
+use hashbrown::HashMap;
+use inquire::prompt_text;
 use log::error;
 use log::info;
 use log::warn;
-use tokio::time::sleep;
-use root::router::{INF, Router};
-use crate::state::OperatingState;
-use crate::state::PersistentState;
 use root::concepts::neighbour::Neighbour;
-use crate::mesh_router::start_router;
-use crate::state::MainLoopEvent::DispatchCommand;
+use root::router::{Router, INF};
+use std::io::stdin;
+use std::time::Duration;
+use std::{env, fs};
+use tokio::time::sleep;
 
 async fn setup() -> anyhow::Result<PersistentState> {
     info!("Node Setup (First Time):");
     let mut id;
     loop {
         id = prompt_text("Pick a unique node id (lowercase string, no spaces): ")?;
-        if id.bytes().any(|x| !x.is_ascii_lowercase() && x != b'-' && !x.is_ascii_digit()) {
+        if id
+            .bytes()
+            .any(|x| !x.is_ascii_lowercase() && x != b'-' && !x.is_ascii_digit())
+        {
             error!("Try again.")
         } else {
             break;
@@ -40,7 +43,6 @@ async fn setup() -> anyhow::Result<PersistentState> {
     })
 }
 
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     if env::var("RUST_LOG").is_err() {
@@ -52,14 +54,14 @@ async fn main() -> anyhow::Result<()> {
     warn!("Notice: THIS DEMO IS NOT DESIGNED FOR SECURITY, AND SHOULD NEVER BE USED OUTSIDE OF A TEST ENVIRONMENT");
 
     info!("Type \"help\" for help");
-    
+
     let mut saved_state = if let Ok(file) = fs::read_to_string("./config.json") {
         serde_json::from_str(&file)?
     } else {
         setup().await?
     };
 
-    for (link, netlink) in &saved_state.links{
+    for (link, netlink) in &saved_state.links {
         saved_state.router.links.insert(
             *link,
             Neighbour {
@@ -69,37 +71,40 @@ async fn main() -> anyhow::Result<()> {
             },
         );
     }
-    saved_state.router.links.retain(|k, _| {
-        saved_state.links.contains_key(k)
-    });
-    
-    let mq = start_router(saved_state, OperatingState{
-        health: Default::default(),
-        unlinked: Default::default(),
-        link_requests: Default::default(),
-        pings: Default::default(),
+    saved_state
+        .router
+        .links
+        .retain(|k, _| saved_state.links.contains_key(k));
 
-        log_routing: false,
-        log_delivery: false,
-    });
-    
+    let mq = start_router(
+        saved_state,
+        OperatingState {
+            health: Default::default(),
+            unlinked: Default::default(),
+            link_requests: Default::default(),
+            pings: Default::default(),
+
+            log_routing: false,
+            log_delivery: false,
+        },
+    );
+
     let mut input_buf = String::new();
 
     let tmq = mq.clone();
     ctrlc::set_handler(move || {
         tmq.cancellation_token.cancel();
         tmq.main.send(DispatchCommand(String::new())).unwrap();
-    }).expect("Error setting Ctrl-C handler");
+    })
+    .expect("Error setting Ctrl-C handler");
 
-    while !mq.cancellation_token.is_cancelled(){
+    while !mq.cancellation_token.is_cancelled() {
         stdin().read_line(&mut input_buf)?;
         mq.main.send(DispatchCommand(input_buf))?;
         input_buf = String::new();
     }
-    
+
     sleep(Duration::from_secs(1)).await; // wait for main thread to finish
 
-    
-    
     Ok(())
 }

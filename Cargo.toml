@@ -6,4 +6,6 @@ members = [
     "examples/mesh-vis",
     "examples/simple-mesh",
     "examples/graph-gen",
-    "examples/super-simple"]
+    "examples/super-simple",
+    "examples/nostd-embassy",
+    ]
