@@ -19,8 +19,7 @@ impl RoutingSystem for SimpleExample {
     type MACSystem = NoMACSystem; // we won't use MAC for this example
 }
 
-static RADIOWAVES: Channel<CriticalSectionRawMutex, OutboundPacket<SimpleExample>, 8> =
-    Channel::new();
+static RADIOWAVES: Channel<CriticalSectionRawMutex, OutboundPacket<SimpleExample>, 64> = Channel::new();
 
 #[embassy_executor::task]
 async fn bob() {
@@ -46,28 +45,25 @@ async fn bob() {
             Err(_) => {}
         };
 
+        // performs route table calculations, and writes routing updates into outbound_packets
+        bob.full_update();
+
         // collect all of our packets, if any
         let packets: Vec<OutboundPacket<SimpleExample>> = bob.outbound_packets.drain(..).collect();
 
         // bob is trying to send a packet. lets try deliver it.
         for pkt in packets {
-            // println!("bob sends: {:?}", &pkt);
-            let _ = tx.try_send(pkt).ok();
+            let _ = tx.send(pkt).await;
         }
-
-        // performs route table calculations, and writes routing updates into outbound_packets
-        bob.full_update();
 
         // print the routing table
         println!("=== {} routing table ===", bob.address);
         for (
             neigh,
-            Route::<SimpleExample> {
-                metric, next_hop, ..
-            },
+            route,
         ) in &bob.routes
         {
-            println!(" - {neigh}: metric: {metric}, next_hop: {next_hop}")
+            println!(" - {neigh} via {route:?}")
         }
         println!("");
 
@@ -98,25 +94,23 @@ async fn eve() {
             }
         }
 
+        // performs route table calculations, and writes routing updates into outbound_packets
+        eve.full_update();
+
         let packets: Vec<OutboundPacket<SimpleExample>> = eve.outbound_packets.drain(..).collect();
         for pkt in packets {
             // println!("eve sends: {:?}", &pkt);
-            let _ = tx.try_send(pkt).ok();
+            let _ = tx.send(pkt).await;
         }
-
-        // performs route table calculations, and writes routing updates into outbound_packets
-        eve.full_update();
 
         // print the routing table
         println!("=== {} routing table ===", eve.address);
         for (
             neigh,
-            Route::<SimpleExample> {
-                metric, next_hop, ..
-            },
+            route,
         ) in &eve.routes
         {
-            println!(" - {neigh}: metric: {metric}, next_hop: {next_hop}")
+            println!(" - {neigh} via {route:?}")
         }
         println!("");
 
@@ -145,26 +139,24 @@ async fn alice() {
             }
         }
 
+        // performs route table calculations, and writes routing updates into outbound_packets
+        alice.full_update();
+
         let packets: Vec<OutboundPacket<SimpleExample>> =
             alice.outbound_packets.drain(..).collect();
         for pkt in packets {
             // println!("eve sends: {:?}", &pkt);
-            let _ = tx.try_send(pkt).ok();
+            let _ = tx.send(pkt).await;
         }
-
-        // performs route table calculations, and writes routing updates into outbound_packets
-        alice.full_update();
 
         // print the routing table
         println!("=== {} routing table ===", alice.address);
         for (
             neigh,
-            Route::<SimpleExample> {
-                metric, next_hop, ..
-            },
+            route,
         ) in &alice.routes
         {
-            println!(" - {neigh}: metric: {metric}, next_hop: {next_hop}")
+            println!(" - {neigh} via {route:?}")
         }
         println!("");
 

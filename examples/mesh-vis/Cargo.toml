@@ -18,3 +18,4 @@ linear-map = "1.2.0"
 serde_json = "1.0.120"
 log = "0.4.22"
 simplelog = "0.12.2"
+hashbrown = { version = "0.15.3", features = ["serde"] }

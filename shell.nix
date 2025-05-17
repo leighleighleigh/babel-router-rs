@@ -31,6 +31,9 @@ pkgs.mkShell rec {
         pkgs.rustup 
         #pkgs.espflash
         pkgs.rust-analyzer
+        pkgs.rustfmt
+        pkgs.rustc
+        pkgs.clippy
         pkgs.pkg-config 
         pkgs.stdenv.cc 
         pkgs.bacon 

@@ -7,5 +7,6 @@ members = [
     "examples/simple-mesh",
     "examples/graph-gen",
     "examples/super-simple",
-    "examples/nostd-embassy",
+    "examples/std-embassy",
+    "examples/embassy-std-tuntap",
     ]

@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 use crate::concepts::neighbour::Neighbour;
 use crate::concepts::packet::{OutboundPacket, Packet, RouteUpdate};
 use crate::concepts::route::{ExternalRoute, Route, Source};
@@ -12,6 +14,7 @@ extern crate alloc;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use hashbrown::{HashMap, HashSet};
+
 
 cfg_if! {
     if #[cfg(feature = "serde")] {

@@ -301,6 +301,7 @@ seqno.addEventListener('click', async () => {
 })
 
 export function updateGraph(data){
+    console.log("Updating graph!");
     recalcGraph(data)
     cy.centre()
     highlight()

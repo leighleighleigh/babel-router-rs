@@ -29,6 +29,7 @@ mod graph_parse;
 mod sim;
 mod vis;
 
+#[derive(Clone, Debug)]
 pub struct GraphSystem {
     router: Router<Self>,
 }
